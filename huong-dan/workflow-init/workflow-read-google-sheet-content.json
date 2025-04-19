@@ -1,5 +1,5 @@
 {
-    "name": "My workflow",
+    "name": "Workflow Read Google Sheet Content",
     "nodes": [
       {
         "parameters": {},

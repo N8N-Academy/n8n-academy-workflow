@@ -1,0 +1,527 @@
+{
+    "name": "Workflow translate Google Sheet Via ChatGPT",
+    "nodes": [
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.manualTrigger",
+        "typeVersion": 1,
+        "position": [
+          60,
+          0
+        ],
+        "id": "3cd282b4-7cbd-41d8-a1c0-0c5b6fffc169",
+        "name": "When clicking ‘Test workflow’"
+      },
+      {
+        "parameters": {
+          "modelId": {
+            "__rl": true,
+            "value": "gpt-4.1-nano-2025-04-14",
+            "mode": "list",
+            "cachedResultName": "GPT-4.1-NANO-2025-04-14"
+          },
+          "messages": {
+            "values": [
+              {
+                "content": "={{ $json.prompt }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "@n8n/n8n-nodes-langchain.openAi",
+        "typeVersion": 1.8,
+        "position": [
+          900,
+          -380
+        ],
+        "id": "5930dd81-a474-43c8-b94a-2e388ea3c88d",
+        "name": "OpenAI",
+        "executeOnce": true,
+        "credentials": {
+          "openAiApi": {
+            "id": "alhKUkxommB5nIwv",
+            "name": "OpenAi account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "documentId": {
+            "__rl": true,
+            "value": "1Wl4qDcw72iEW74j8AK1tFbQlxpnn9cWBIo_Fhh5d9Tw",
+            "mode": "id"
+          },
+          "sheetName": {
+            "__rl": true,
+            "value": 35615693,
+            "mode": "list",
+            "cachedResultName": "Trang tính1",
+            "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1Wl4qDcw72iEW74j8AK1tFbQlxpnn9cWBIo_Fhh5d9Tw/edit#gid=35615693"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.googleSheets",
+        "typeVersion": 4.5,
+        "position": [
+          200,
+          0
+        ],
+        "id": "8d552c85-f942-4f2b-bf29-7f5ed6a2726e",
+        "name": "Get Google Sheet Data",
+        "credentials": {
+          "googleSheetsOAuth2Api": {
+            "id": "cBmnjPUleQ1yQFGG",
+            "name": "Google Sheets account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "function getMissingTranslations(data) {\n  const grouped = {};\n\n  data.forEach(itemJson => {\n    const item = itemJson.json;\n    const row = item.row_number ?? item.No ?? null;\n\n    Object.keys(item).forEach(key => {\n      if (key.startsWith(\"translate_\") && item[key] === \"\" && item.translate_text && item.translate_text != \"\") {\n        const language = key.replace(\"translate_\", \"\");\n        if (!grouped[language]) {\n          grouped[language] = [];\n        }\n        grouped[language].push({\n          t: item.translate_text,\n          r: row\n        });\n      }\n    });\n  });\n\n  // Convert to array format\n  const result = Object.entries(grouped).map(([language, children]) => ({\n    translate: language,\n    children\n  }));\n\n  return result;\n}\n\nlet output = getMissingTranslations($input.all());\nreturn output;"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          380,
+          0
+        ],
+        "id": "1af46117-8698-45d5-8b46-b9fd94548ed1",
+        "name": "Format Data",
+        "executeOnce": true
+      },
+      {
+        "parameters": {
+          "jsCode": "function generateTranslationPrompts(missingTranslations, maxChars = 5000) {\n  const prompts = [];\n\n  missingTranslations.forEach(group => {\n    const lang = group.translate;\n    const jsonInput = JSON.stringify(group.children);\n    const jsonInputLength = jsonInput.length;\n\n    if (jsonInputLength > maxChars) {\n      const chunks = splitInputIntoChunks(jsonInput, maxChars);\n      chunks.forEach(chunk => {\n        prompts.push({\n          language: lang,\n          prompt: createPrompt(lang, chunk)\n        });\n      });\n    } else {\n      prompts.push({\n        language: lang,\n        prompt: createPrompt(lang, jsonInput)\n      });\n    }\n  });\n\n  return prompts;\n}\n\nfunction createPrompt(lang, jsonInput) {\n  return `Translate to ${lang.toUpperCase()}. Input format is json [{\"t\":\"Text to translate\", \"r\": row number}] → Output format is json array, each object should be: {\"o\":\"translate output in here\", \"r\": row number}. Keep these format till end, not change it to o=, if have case with 「 and 」, remember to add \" before 「 and after 」 to make it json, don't use o => , this is not php. No explanation. Same order. Input: ${jsonInput} Output:`;\n}\n\nfunction splitInputIntoChunks(jsonInput, maxChars) {\n  const chunks = [];\n  let currentChunk = '';\n  let currentLength = 0;\n\n  const items = JSON.parse(jsonInput);\n  items.forEach(item => {\n    const itemString = JSON.stringify(item);\n    if (currentLength + itemString.length > maxChars) {\n      chunks.push(currentChunk);\n      currentChunk = itemString;\n      currentLength = itemString.length;\n    } else {\n      if (currentChunk) currentChunk += ',';\n      currentChunk += itemString;\n      currentLength += itemString.length;\n    }\n  });\n\n  if (currentChunk) {\n    chunks.push(currentChunk);\n  }\n\n  return chunks.map(chunk => [chunk]);\n}\n\nconst output = generateTranslationPrompts($input.all().map((item) => item.json));\nreturn output;"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          680,
+          -180
+        ],
+        "id": "4315259a-3ae4-45c4-afa6-af48396a6be8",
+        "name": "Generate Prompt"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "e9cb3c86-acc8-4191-8350-221988fea973",
+                "leftValue": "={{ $json.children }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "array",
+                  "operation": "notEmpty",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          520,
+          0
+        ],
+        "id": "5a9ab0ef-d290-4dba-995d-87cd1a73e014",
+        "name": "If"
+      },
+      {
+        "parameters": {
+          "jsCode": "function mergeTranslations(gptOutputs, languageMap) {\n  const result = {};\n\n  for (let index = 0; index < gptOutputs.length; index++) {\n    const output = gptOutputs[index];\n    const langKey = languageMap[index]; // e.g., \"translate_japanese\"\n    const content = output?.message?.content;\n\n    let translations;\n    try {\n      translations = JSON.parse(content);\n      if (!Array.isArray(translations)) throw new Error('Not an array');\n    } catch (e) {\n      console.error(`Invalid JSON in response for ${langKey}:`, content);\n      return [{error: true}]; // Exit the whole function and return an empty array\n    }\n\n    translations.forEach(item => {\n      const row = item.r;\n      if (!result[row]) {\n        result[row] = { row_number: row };\n      }\n\n      // Skip if already exists (in case of chunks)\n      if (!result[row][langKey]) {\n        result[row][langKey] = item.o;\n      }\n    });\n  }\n\n  // Convert to array and sort by row_number\n  return Object.values(result).sort((a, b) => a.row_number - b.row_number);\n}\n\n// Usage example\nlet listPromt = $('Generate Prompt').all().map(item => `translate_${item?.json?.language}`);\nlet output = mergeTranslations($input.all().map(item => item?.json), listPromt);\n\nreturn output;\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1340,
+          -340
+        ],
+        "id": "5d139544-9af7-493f-8ca9-77c0be4a97c2",
+        "name": "Prepare Data to Google Sheet",
+        "executeOnce": true
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "documentId": {
+            "__rl": true,
+            "value": "1Wl4qDcw72iEW74j8AK1tFbQlxpnn9cWBIo_Fhh5d9Tw",
+            "mode": "id"
+          },
+          "sheetName": {
+            "__rl": true,
+            "value": 35615693,
+            "mode": "list",
+            "cachedResultName": "Trang tính1",
+            "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1Wl4qDcw72iEW74j8AK1tFbQlxpnn9cWBIo_Fhh5d9Tw/edit#gid=35615693"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "row_number": "={{ $json.row_number }}",
+              "translate_japanese": "={{ $json.translate_japanese }}"
+            },
+            "matchingColumns": [
+              "row_number"
+            ],
+            "schema": [
+              {
+                "id": "No",
+                "displayName": "No",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true,
+                "removed": true
+              },
+              {
+                "id": "Language",
+                "displayName": "Language",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true,
+                "removed": true
+              },
+              {
+                "id": "Feature",
+                "displayName": "Feature",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true,
+                "removed": true
+              },
+              {
+                "id": "key",
+                "displayName": "key",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true,
+                "removed": true
+              },
+              {
+                "id": "translate_text",
+                "displayName": "translate_text",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true,
+                "removed": true
+              },
+              {
+                "id": "translate_japanese",
+                "displayName": "translate_japanese",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "row_number",
+                "displayName": "row_number",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true,
+                "readOnly": true,
+                "removed": false
+              }
+            ],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.googleSheets",
+        "typeVersion": 4.5,
+        "position": [
+          1420,
+          -40
+        ],
+        "id": "f915ca35-e48b-42a2-9f29-17cd788ca7f9",
+        "name": "Update to Google Sheet",
+        "retryOnFail": true,
+        "credentials": {
+          "googleSheetsOAuth2Api": {
+            "id": "cBmnjPUleQ1yQFGG",
+            "name": "Google Sheets account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "documentId": {
+            "__rl": true,
+            "value": "1Wl4qDcw72iEW74j8AK1tFbQlxpnn9cWBIo_Fhh5d9Tw",
+            "mode": "id"
+          },
+          "sheetName": {
+            "__rl": true,
+            "value": 35615693,
+            "mode": "list",
+            "cachedResultName": "Trang tính1",
+            "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1Wl4qDcw72iEW74j8AK1tFbQlxpnn9cWBIo_Fhh5d9Tw/edit#gid=35615693"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.googleSheets",
+        "typeVersion": 4.5,
+        "position": [
+          1580,
+          -40
+        ],
+        "id": "c2aac785-465c-45b4-a6fb-d34af8a60345",
+        "name": "Google Sheets",
+        "executeOnce": true,
+        "credentials": {
+          "googleSheetsOAuth2Api": {
+            "id": "cBmnjPUleQ1yQFGG",
+            "name": "Google Sheets account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "1d0a4c9b-67ff-4e3e-bbf1-89b326e15ec0",
+                "leftValue": "={{ $json.error }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "exists",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          1220,
+          -60
+        ],
+        "id": "2264dca6-7ea5-495e-89df-d85cbde3f97f",
+        "name": "If1"
+      },
+      {
+        "parameters": {
+          "modelId": {
+            "__rl": true,
+            "value": "gpt-4.1-nano-2025-04-14",
+            "mode": "list",
+            "cachedResultName": "GPT-4.1-NANO-2025-04-14"
+          },
+          "messages": {
+            "values": [
+              {
+                "content": "=Fix this data, make sure it is JSON {{ $('OpenAI').item.json.message.content }}, give me JSON output only, no explain."
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "@n8n/n8n-nodes-langchain.openAi",
+        "typeVersion": 1.8,
+        "position": [
+          900,
+          -240
+        ],
+        "id": "7f5479e9-8873-46bf-b28d-18b7a68bb498",
+        "name": "Correct JSON",
+        "credentials": {
+          "openAiApi": {
+            "id": "alhKUkxommB5nIwv",
+            "name": "OpenAi account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "content": "## N8n Academy - Translation Google sheet using ChatGPT \n\nTemplate dùng để dịch text ra bất kỳ ngôn ngữ nào bằng ChatGPT với chi phí thấp nhất",
+          "height": 620,
+          "width": 1600
+        },
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          180,
+          -420
+        ],
+        "id": "823fb57f-9814-4421-a300-708b932c11f0",
+        "name": "Sticky Note"
+      }
+    ],
+    "pinData": {},
+    "connections": {
+      "When clicking ‘Test workflow’": {
+        "main": [
+          [
+            {
+              "node": "Get Google Sheet Data",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "OpenAI": {
+        "main": [
+          [
+            {
+              "node": "Prepare Data to Google Sheet",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Google Sheet Data": {
+        "main": [
+          [
+            {
+              "node": "Format Data",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Data": {
+        "main": [
+          [
+            {
+              "node": "If",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Generate Prompt": {
+        "main": [
+          [
+            {
+              "node": "OpenAI",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "If": {
+        "main": [
+          [
+            {
+              "node": "Generate Prompt",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Data to Google Sheet": {
+        "main": [
+          [
+            {
+              "node": "If1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Update to Google Sheet": {
+        "main": [
+          [
+            {
+              "node": "Google Sheets",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Google Sheets": {
+        "main": [
+          [
+            {
+              "node": "Format Data",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "If1": {
+        "main": [
+          [
+            {
+              "node": "Correct JSON",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Update to Google Sheet",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Correct JSON": {
+        "main": [
+          [
+            {
+              "node": "Prepare Data to Google Sheet",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "active": false,
+    "settings": {
+      "executionOrder": "v1"
+    },
+    "versionId": "ab8a9167-30bc-4fbf-9ec5-08acd48ab014",
+    "meta": {
+      "templateCredsSetupCompleted": true,
+      "instanceId": "82d1a6f025c77387b901d86ed0ada4e7723ea5ddce088d94cc288205ed5167cb"
+    },
+    "id": "V1zI0a4fkGUZ0ihU",
+    "tags": []
+  }
